@@ -20,8 +20,12 @@
  (* iopad_external_pin *) input wire  wb_nrst,
  (* iopad_external_pin *) output wire q,
  (* iopad_external_pin *) output wire q_en,
- // UART interface for bootloader
- (* iopad_external_pin *) input wire  uart_rx
+ // SPI interface from RP2040 for bootloader
+ // These connect to the RP2040 on the Shrike-Lite board
+ (* iopad_external_pin *) input wire  spi_sck,   // SPI clock from RP2040
+ (* iopad_external_pin *) input wire  spi_ss_n,  // Chip select (active low)
+ (* iopad_external_pin *) input wire  spi_mosi,  // Data from RP2040
+ (* iopad_external_pin *) output wire spi_miso   // Data to RP2040
  );
 
 wire wb_rst;
@@ -141,19 +145,24 @@ wire serv_rst = wb_rst | ~boot_done;
       .o_wb_timer_cyc (wb_timer_stb),
       .i_wb_timer_rdt (wb_timer_rdt));
 
-   // UART Bootloader - loads program into BRAM before SERV starts
-   uart_bootloader #(
-       .CLK_FREQ(50_000_000),
-       .BAUD_RATE(115200),
-       .MAX_WORDS(memsize)
+   // SPI Bootloader - loads program into BRAM via RP2040 SPI
+   // No external UART adapter needed - uses Shrike-Lite's built-in RP2040
+   spi_bootloader #(
+       .MAX_BYTES(memsize * 4)  // 128 words * 4 bytes = 512 bytes
    ) bootloader (
        .clk(wb_clk),
        .rst(wb_rst),
-       .uart_rx(uart_rx),
+       // SPI interface from RP2040
+       .spi_sck(spi_sck),
+       .spi_ss_n(spi_ss_n),
+       .spi_mosi(spi_mosi),
+       .spi_miso(spi_miso),
+       // BRAM write interface
        .boot_bram_addr(boot_bram_addr),
        .boot_bram_data(boot_bram_data),
        .boot_bram_wen(boot_bram_wen),
        .boot_bram_wclken(boot_bram_wclken),
+       // Status
        .boot_done(boot_done),
        .boot_error(boot_error)
    );
