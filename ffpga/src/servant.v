@@ -19,13 +19,46 @@
  (* iopad_external_pin *) output wire wb_clk_en,
  (* iopad_external_pin *) input wire  wb_nrst,
  (* iopad_external_pin *) output wire q,
- (* iopad_external_pin *) output wire q_en
+ (* iopad_external_pin *) output wire q_en,
+ // UART interface for bootloader
+ (* iopad_external_pin *) input wire  uart_rx
  );
 
 wire wb_rst;
 assign wb_rst = ~wb_nrst;
 assign wb_clk_en = 1'b1;
 assign q_en = 1'b1;
+
+// Bootloader signals
+wire boot_done;
+wire boot_error;
+wire [8:0] boot_bram_addr;
+wire [7:0] boot_bram_data;
+wire boot_bram_wen;
+wire boot_bram_wclken;
+
+// Internal BRAM signals from servant_ram
+wire [1:0] ram_bram_ratio;
+wire [7:0] ram_bram_data_in;
+wire ram_bram_wen;
+wire ram_bram_wclken;
+wire [8:0] ram_bram_write_addr;
+wire ram_bram_ren;
+wire ram_bram_rclken;
+wire [8:0] ram_bram_read_addr;
+
+// BRAM signal muxing: bootloader has priority until boot_done
+assign BRAM0_RATIO = ram_bram_ratio;  // Always 8-bit mode
+assign BRAM0_DATA_IN = boot_done ? ram_bram_data_in : boot_bram_data;
+assign BRAM0_WEN = boot_done ? ram_bram_wen : boot_bram_wen;
+assign BRAM0_WCLKEN = boot_done ? ram_bram_wclken : boot_bram_wclken;
+assign BRAM0_WRITE_ADDR = boot_done ? ram_bram_write_addr : boot_bram_addr;
+assign BRAM0_REN = boot_done ? ram_bram_ren : 1'b0;
+assign BRAM0_RCLKEN = boot_done ? ram_bram_rclken : 1'b0;
+assign BRAM0_READ_ADDR = ram_bram_read_addr;
+
+// Hold SERV in reset until boot is complete
+wire serv_rst = wb_rst | ~boot_done;
 
    parameter memfile = "blinky.hex";
    parameter memsize = 128;
@@ -108,6 +141,23 @@ assign q_en = 1'b1;
       .o_wb_timer_cyc (wb_timer_stb),
       .i_wb_timer_rdt (wb_timer_rdt));
 
+   // UART Bootloader - loads program into BRAM before SERV starts
+   uart_bootloader #(
+       .CLK_FREQ(50_000_000),
+       .BAUD_RATE(115200),
+       .MAX_WORDS(memsize)
+   ) bootloader (
+       .clk(wb_clk),
+       .rst(wb_rst),
+       .uart_rx(uart_rx),
+       .boot_bram_addr(boot_bram_addr),
+       .boot_bram_data(boot_bram_data),
+       .boot_bram_wen(boot_bram_wen),
+       .boot_bram_wclken(boot_bram_wclken),
+       .boot_done(boot_done),
+       .boot_error(boot_error)
+   );
+
    servant_ram
      #(.memfile (memfile),
        .depth (memsize),
@@ -115,20 +165,20 @@ assign q_en = 1'b1;
    ram
      (
      `ifdef BRAM_IMPL
-     // bram ports
-     .BRAM0_RATIO(BRAM0_RATIO),
-     .BRAM0_DATA_IN(BRAM0_DATA_IN),
-     .BRAM0_WEN(BRAM0_WEN),
-     .BRAM0_WCLKEN(BRAM0_WCLKEN),
-     .BRAM0_WRITE_ADDR(BRAM0_WRITE_ADDR),
-     .BRAM0_DATA_OUT(BRAM0_DATA_OUT),
-     .BRAM0_REN(BRAM0_REN),
-     .BRAM0_RCLKEN(BRAM0_RCLKEN),
-     .BRAM0_READ_ADDR(BRAM0_READ_ADDR),
+     // bram ports - connect to internal signals for muxing
+     .BRAM0_RATIO(ram_bram_ratio),
+     .BRAM0_DATA_IN(ram_bram_data_in),
+     .BRAM0_WEN(ram_bram_wen),
+     .BRAM0_WCLKEN(ram_bram_wclken),
+     .BRAM0_WRITE_ADDR(ram_bram_write_addr),
+     .BRAM0_DATA_OUT(BRAM0_DATA_OUT),  // Read data comes directly from BRAM
+     .BRAM0_REN(ram_bram_ren),
+     .BRAM0_RCLKEN(ram_bram_rclken),
+     .BRAM0_READ_ADDR(ram_bram_read_addr),
     `endif
      // Wishbone interface
       .i_wb_clk (wb_clk),
-      .i_wb_rst (wb_rst),
+      .i_wb_rst (serv_rst),  // Use serv_rst which includes boot_done
       .i_wb_adr (wb_mem_adr[$clog2(memsize)-1:2]),
       .i_wb_cyc (wb_mem_stb),
       .i_wb_we  (wb_mem_we) ,
@@ -180,7 +230,7 @@ assign q_en = 1'b1;
    cpu
      (
       .i_clk        (wb_clk),
-      .i_rst        (wb_rst),
+      .i_rst        (serv_rst),  // Hold CPU in reset until boot complete
       .i_timer_irq  (timer_irq),
 
       .o_wb_mem_adr   (wb_mem_adr),
