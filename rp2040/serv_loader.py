@@ -22,11 +22,15 @@ from machine import Pin, SPI
 import time
 
 # SPI pins for FPGA connection on Shrike-Lite
-# From ShrikeFlash library: https://github.com/vicharak-in/shrike_flash
-SPI_SCK_PIN = 2   # GP2 - SPI Clock
-SPI_MOSI_PIN = 3  # GP3 - Master Out Slave In
-SPI_MISO_PIN = 0  # GP0 - Master In Slave Out
-SPI_CS_PIN = 1    # GP1 - Chip Select
+# From Shrike-Lite pinout: https://vicharak-in.github.io/shrike-lite/shrike_pinouts.html
+# FPGA PIN 3 (GPIO12) ↔ RP2040 GPIO 2 = SCK
+# FPGA PIN 4 (GPIO13) ↔ RP2040 GPIO 1 = SS
+# FPGA PIN 5 (GPIO14) ↔ RP2040 GPIO 3 = MOSI
+# FPGA PIN 18 (GPIO5) ↔ RP2040 GPIO 14 = MISO
+SPI_SCK_PIN = 2    # GP2 - SPI Clock
+SPI_MOSI_PIN = 3   # GP3 - Master Out Slave In
+SPI_MISO_PIN = 14  # GP14 - Master In Slave Out (directly from FPGA GPIO5)
+SPI_CS_PIN = 1     # GP1 - Chip Select
 
 # Commands
 CMD_START = 0x01
