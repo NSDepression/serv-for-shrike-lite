@@ -70,7 +70,7 @@ wire serv_rst = wb_rst | ~boot_done;
    parameter width = 1;
    parameter sim = 0;
    parameter [0:0] debug = 1'b0;
-   parameter with_csr = 1;
+   parameter with_csr = 0;  // Disabled to save LUTs
    parameter [0:0] compress = 0;
    parameter [0:0] align = compress;
 
